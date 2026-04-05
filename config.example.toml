@@ -1,0 +1,44 @@
+# focus-space-wallpaper 設定ファイル
+# このファイルを ~/.config/focus-space-wallpaper/config.toml にコピーして使用
+
+[generation]
+width = 3840                    # 画像幅 (ピクセル)
+height = 2160                   # 画像高さ (ピクセル)
+octaves = 8                     # FBMオクターブ数 (多いほど詳細、遅い)
+spectral_index = 0.965          # CMBスペクトル指数 n_s (宇宙の実測値)
+star_count = 3000               # 星の数
+exposure = 1.5                  # HDRトーンマッピング露出 (高いほど明るい)
+vignette_strength = 1.5         # ビネット強度 (0=なし、2=強い暗化)
+
+[colors]
+# カラーマップ制御点: [密度閾値t, R, G, B]
+# 集中力に配慮した色設計:
+#   青系ベース (ストレス軽減・集中促進) + 赤/紫アクセント (覚醒・単調さ回避)
+palette = [
+    [0.0,  5.0,   5.0,  15.0],  # 深宇宙の黒
+    [0.3,  10.0,  20.0, 60.0],  # ダークネイビー
+    [0.6,  30.0,  50.0, 120.0], # 星雲ブルー
+    [0.8,  60.0,  40.0, 100.0], # ブルーパープル
+    [1.0,  100.0, 30.0, 80.0],  # ディープマゼンタ
+]
+
+[focus]
+check_interval_secs = 300       # 集中度チェック間隔 (秒, デフォルト5分)
+unfocused_threshold = 0.4       # この値以下で非集中判定 (0.0-1.0)
+focused_threshold = 0.6         # この値以上で集中復帰判定
+hysteresis_count = 2            # 連続非集中判定回数 (誤検知防止)
+mouse_weight = 0.3              # マウス指標の重み
+typing_weight = 0.3             # タイピング指標の重み
+idle_weight = 0.2               # アイドル指標の重み
+entropy_weight = 0.2            # エントロピー指標の重み
+idle_gap_threshold_secs = 30    # アイドルとみなすギャップ (秒)
+typing_burst_gap_secs = 2       # タイピングバースト区切り (秒)
+
+[transition]
+duration_secs = 90              # トランジション全体の時間 (秒)
+steps = 25                      # 中間フレーム数
+easing = "smooth_step"          # イージング: "linear" | "smooth_step" | "ease_in_out"
+
+[wallpaper]
+backend = "auto"                # バックエンド: "auto" | "feh" | "swaybg" | "gsettings" | "macos" | "windows"
+output_dir = "/tmp/focus-space-wallpaper"
