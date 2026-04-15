@@ -39,7 +39,7 @@ impl WallpaperSetter {
 
     pub fn set(&self, path: &Path) -> Result<()> {
         match &self.backend {
-            WallpaperBackend::Hyprpaper => set_wallpaper_hyprpaper(path),
+            WallpaperBackend::Hyprpaper => self.set_wallpaper_hyprpaper(path),
             WallpaperBackend::Swaybg => set_wallpaper_swaybg(path),
             WallpaperBackend::Gsettings => set_wallpaper_gsettings(path),
             WallpaperBackend::Feh => set_wallpaper_feh(path),
@@ -116,47 +116,65 @@ fn command_exists(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Hyprland + hyprpaper: conf を書き換えて hyprpaper を再起動
-fn set_wallpaper_hyprpaper(path: &Path) -> Result<()> {
-    let canonical = path.canonicalize()?;
-    let path_str = canonical.to_string_lossy();
+impl WallpaperSetter {
+    /// Hyprland + hyprpaper: conf を書き換えて hyprpaper を再起動
+    fn set_wallpaper_hyprpaper(&self, path: &Path) -> Result<()> {
+        let canonical = path.canonicalize()?;
+        let path_str = canonical.to_string_lossy().to_string();
 
-    // モニター一覧を取得
-    let monitors = get_hyprland_monitors()?;
-    if monitors.is_empty() {
-        return Err(anyhow!("Hyprland モニターを取得できません"));
+        let monitors = get_hyprland_monitors()?;
+        if monitors.is_empty() {
+            return Err(anyhow!("Hyprland モニターを取得できません"));
+        }
+
+        // hyprpaper v0.8.3 以降のブロック形式
+        let conf_path = find_hyprpaper_conf()?;
+        let mut new_conf = String::new();
+        for monitor in &monitors {
+            new_conf.push_str(&format!(
+                "wallpaper {{\n  monitor = {}\n  path = {}\n  fit_mode = cover\n}}\n",
+                monitor, path_str
+            ));
+        }
+        if let Some(parent) = conf_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&conf_path, &new_conf)?;
+
+        // 既存の hyprpaper を終了して再起動
+        let _ = Command::new("pkill").args(["-x", "hyprpaper"]).status();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        Command::new("hyprpaper")
+            .spawn()
+            .map_err(|e| anyhow!("hyprpaper の起動に失敗: {}", e))?;
+        std::thread::sleep(std::time::Duration::from_millis(400));
+
+        tracing::debug!("hyprpaper 壁紙設定: {}", path_str);
+        Ok(())
     }
+}
 
-    // hyprpaper.conf のパスを探す
-    let conf_path = find_hyprpaper_conf()?;
-
-    // 新しい設定を生成
-    let mut new_conf = String::new();
-    for monitor in &monitors {
-        new_conf.push_str(&format!(
-            "wallpaper {{\n  monitor = {}\n  path = {}\n  fit_mode = cover\n}}\n",
-            monitor, path_str
-        ));
+/// 実行中の Hyprland/hyprpaper プロセスから HYPRLAND_INSTANCE_SIGNATURE を取得
+fn find_hyprland_signature_from_proc() -> Option<String> {
+    // /proc/<pid>/environ を探す対象プロセス名
+    for name in &["Hyprland", "hyprpaper"] {
+        if let Ok(output) = Command::new("pgrep").args(["-x", name]).output() {
+            let pids = String::from_utf8_lossy(&output.stdout);
+            for pid in pids.split_whitespace() {
+                let env_path = format!("/proc/{}/environ", pid.trim());
+                if let Ok(data) = std::fs::read(&env_path) {
+                    for entry in data.split(|&b| b == 0) {
+                        if let Ok(s) = std::str::from_utf8(entry) {
+                            if let Some(val) = s.strip_prefix("HYPRLAND_INSTANCE_SIGNATURE=") {
+                                return Some(val.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
-
-    // conf を書き換え
-    std::fs::write(&conf_path, &new_conf)?;
-    tracing::debug!("hyprpaper.conf 更新: {:?}", conf_path);
-
-    // 既存の hyprpaper を終了
-    let _ = Command::new("pkill").args(["-x", "hyprpaper"]).status();
-    std::thread::sleep(std::time::Duration::from_millis(200));
-
-    // hyprpaper を再起動
-    Command::new("hyprpaper")
-        .spawn()
-        .map_err(|e| anyhow!("hyprpaper の起動に失敗: {}", e))?;
-
-    // 起動待機
-    std::thread::sleep(std::time::Duration::from_millis(600));
-    tracing::info!("hyprpaper 再起動完了: {}", path_str);
-
-    Ok(())
+    None
 }
 
 /// hyprpaper.conf のパスを返す
@@ -197,12 +215,24 @@ fn get_hyprland_monitors() -> Result<Vec<String>> {
 
 /// モニターの (name, width, height, scale) を取得
 pub fn get_hyprland_monitor_info() -> Result<Vec<(String, u32, u32, f32)>> {
+    // HYPRLAND_INSTANCE_SIGNATURE が未設定なら実行中プロセスから補完
+    if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_err() {
+        if let Some(sig) = find_hyprland_signature_from_proc() {
+            // 環境変数を設定してから実行 (本プロセスのみに影響)
+            std::env::set_var("HYPRLAND_INSTANCE_SIGNATURE", &sig);
+            tracing::debug!("HYPRLAND_INSTANCE_SIGNATURE をプロセスから取得: {}", sig);
+        }
+    }
+
     let output = Command::new("hyprctl")
         .args(["monitors", "-j"])
         .output()?;
 
     if !output.status.success() {
-        return Err(anyhow!("hyprctl monitors の実行に失敗しました"));
+        return Err(anyhow!(
+            "hyprctl monitors の実行に失敗しました: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
     }
 
     let json_str = String::from_utf8_lossy(&output.stdout);

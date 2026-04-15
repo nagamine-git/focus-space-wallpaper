@@ -2,39 +2,25 @@
 name = "focus-space-wallpaper"
 version = "0.1.0"
 edition = "2021"
-description = "宇宙シミュレーション壁紙で集中力をサポートするデスクトップアプリ"
+description = "集中を妨げない静かな深青星雲の壁紙ジェネレーター"
 
 [[bin]]
 name = "focus-space-wallpaper"
 path = "src/main.rs"
 
 [dependencies]
-# CLI
 clap = { version = "4", features = ["derive"] }
-
-# 設定
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 directories = "5"
-
-# 画像生成
 image = "0.25"
 noise = "0.9"
 rayon = "1"
 rand = "0.8"
 rand_chacha = "0.3"
-
-# 入力監視
-rdev = "0.5"
-
-# 非同期
-tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros", "signal"] }
-
-# ログ・エラー処理
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
-thiserror = "1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.58", features = [
